@@ -13,7 +13,6 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
 
     ollama_base_url: str = "http://localhost:11434"
-    ollama_embedding_model: str = "nomic-embed-text"
     ollama_generation_model: str = "llama3.1:8b"
 
     database_path: str = "./knowledge_inbox.db"

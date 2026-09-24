@@ -48,7 +48,7 @@ class GroqGeneration(GenerationProvider):
     def generate(self, prompt: str) -> str:
         try:
             response = self._client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="openai/gpt-oss-20b",
                 messages=[{"role": "user", "content": prompt}],
             )
             return response.choices[0].message.content

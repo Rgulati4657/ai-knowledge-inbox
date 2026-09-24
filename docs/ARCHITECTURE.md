@@ -123,6 +123,20 @@ e.g. the local sentence-transformers model, on every request). This is a thin fa
 function, not a plugin framework — it exists because the provider landscape genuinely
 required it, not as speculative future-proofing.
 
+**All four provider combinations are live-verified**, not just code-reviewed: Gemini
+embeddings + Gemini generation, local (`sentence-transformers`) embeddings + Gemini
+generation, local embeddings + Groq generation, and fully-offline local embeddings +
+local (Ollama) generation. One real finding from that testing, worth knowing before
+switching: hosted-model catalogs move fast enough that a hardcoded model name is a
+real, ongoing risk, not a hypothetical -- both `gemini-embedding-001`/`gemini-3.5-flash-lite`
+(section 6's model choice) and Groq's `openai/gpt-oss-20b` (replacing a first guess,
+`llama-3.1-8b-instant`, which had already been retired) were only found to be correct
+by querying each provider's live model list against a real key, not by reading docs.
+Anyone deploying this later should expect to re-check both. Also observed live: smaller
+local models (tested with `qwen2.5:1.5b` via Ollama) answer correctly but are less
+reliable about following the "cite sources as [1]" instruction than the larger hosted
+models -- a real quality/cost tradeoff of the local path, not a bug.
+
 ## 6. RAG query flow
 
 `POST /query` (`services/rag.py`):

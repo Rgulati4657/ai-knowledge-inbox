@@ -36,7 +36,12 @@ class GeminiGeneration(GenerationProvider):
 
 class GroqGeneration(GenerationProvider):
     def __init__(self, api_key: str):
-        from groq import Groq
+        try:
+            from groq import Groq
+        except ImportError as exc:
+            raise ProviderError(
+                "GENERATION_PROVIDER=groq requires the groq package. Run: pip install groq"
+            ) from exc
 
         self._client = Groq(api_key=api_key)
 

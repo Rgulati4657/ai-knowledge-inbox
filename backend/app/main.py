@@ -35,6 +35,57 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="AI Knowledge Inbox", lifespan=lifespan)
 
+
+class SafetyNetMiddleware:
+    """Catches anything the per-type handlers below don't recognize -- i.e.
+    an actual bug, not one of our four domain errors -- and turns it into a
+    normal JSON response instead of letting it reach Starlette's built-in
+    ServerErrorMiddleware.
+
+    That matters for two concrete reasons, both hit live during development
+    (switching to a provider whose optional dependency wasn't installed):
+    ServerErrorMiddleware sits *outside* CORSMiddleware, so its fallback
+    response carries no CORS headers and the browser reports a generic
+    "Failed to fetch" with zero information; and it also sits outside our
+    own request-logging middleware, so the failure never reaches /logs.
+    Catching the exception here -- positioned inside CORS in the middleware
+    stack (see the add_middleware call order below) -- fixes both: our
+    response passes through CORS and the request logger like any other.
+    """
+
+    def __init__(self, app: FastAPI):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+
+        async def send_wrapper(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception:
+            logger.exception("request.unhandled_error path=%s", scope.get("path"))
+            if response_started:
+                raise  # can't send a fresh response, part of one already went out
+            response = JSONResponse(status_code=500, content={"detail": "Internal server error"})
+            await response(scope, receive, send)
+
+
+# Order matters: each add_middleware call makes that middleware the new
+# outermost layer among these three, so adding SafetyNet first means it
+# ends up innermost (closest to the routes) -- exactly where it needs to be
+# to catch a bug before CORS/logging see it, so its response still passes
+# through both normally afterward.
+app.add_middleware(SafetyNetMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_settings().allowed_origins_list,

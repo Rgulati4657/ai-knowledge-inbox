@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.core.dependencies import current_embedding_provider, current_generation_provider
 from app.main import app
 from tests.conftest import FakeEmbeddingProvider, FakeGenerationProvider
@@ -101,3 +102,41 @@ def test_logs_endpoint_returns_recent_entries(client):
     response = client.get("/logs?limit=10")
     assert response.status_code == 200
     assert isinstance(response.json()["logs"], list)
+
+
+def test_unexpected_exception_gets_json_response_with_cors_and_is_logged(client):
+    """Regression test for a real bug hit during manual testing: switching to
+    a provider whose optional dependency wasn't installed raised a bare
+    ModuleNotFoundError, which isn't one of our four domain exception types.
+    That escaped to Starlette's default handler, which sits outside
+    CORSMiddleware -- so the error response had no CORS header at all and
+    the browser reported a content-free "Failed to fetch", with nothing in
+    /logs to explain why. SafetyNetMiddleware in main.py exists specifically
+    to catch this class of error before it reaches that point.
+    """
+
+    def _boom():
+        raise RuntimeError("simulated unexpected bug, not a domain error")
+
+    # CORS allow_origins is baked into the app at import time from .env, so
+    # the test uses whatever origin is actually configured rather than a
+    # hardcoded guess -- otherwise this test would be flaky against any
+    # local .env that doesn't happen to list "http://localhost:5173".
+    allowed_origin = get_settings().allowed_origins_list[0]
+
+    app.dependency_overrides[current_embedding_provider] = _boom
+    try:
+        response = client.post(
+            "/ingest",
+            json={"source_type": "note", "content": "irrelevant"},
+            headers={"Origin": allowed_origin},
+        )
+    finally:
+        app.dependency_overrides[current_embedding_provider] = lambda: FakeEmbeddingProvider()
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal server error"}
+    assert response.headers.get("access-control-allow-origin") == allowed_origin
+
+    logs = client.get("/logs?limit=20").json()["logs"]
+    assert any("request.unhandled_error" in entry["message"] for entry in logs)

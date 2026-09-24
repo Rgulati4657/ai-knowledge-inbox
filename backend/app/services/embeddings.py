@@ -72,7 +72,14 @@ class LocalEmbeddings(EmbeddingProvider):
     _MODEL_NAME = "all-MiniLM-L6-v2"
 
     def __init__(self):
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ImportError as exc:
+            raise ProviderError(
+                "EMBEDDING_PROVIDER=local requires sentence-transformers, which is not "
+                "installed by default (see requirements.txt). Run: "
+                "pip install sentence-transformers"
+            ) from exc
 
         self._model = SentenceTransformer(self._MODEL_NAME)
 
